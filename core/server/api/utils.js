@@ -23,7 +23,7 @@ utils = {
     // ### Manual Default Options
     // These must be provided by the endpoint
     // browseDefaultOptions - valid for all browse api endpoints
-    browseDefaultOptions: ['page', 'limit'],
+    browseDefaultOptions: ['page', 'limit', 'fields', 'filter', 'order', 'debug'],
     // idDefaultOptions - valid whenever an id is valid
     idDefaultOptions: ['id'],
 
@@ -38,8 +38,7 @@ utils = {
         /**
          * ### Do Validate
          * Validate the object and options passed to an endpoint
-         * @argument object
-         * @argument options
+         * @argument {...*} [arguments] object or object and options hash
          */
         return function doValidate() {
             var object, options, permittedOptions;
@@ -89,7 +88,8 @@ utils = {
                     return Promise.resolve(options);
                 }
 
-                return errors.logAndRejectError(validationErrors);
+                // For now, we can only handle showing the first validation error
+                return errors.logAndRejectError(validationErrors[0]);
             }
 
             // If we got an object, check that too
@@ -110,12 +110,15 @@ utils = {
         var globalValidations = {
                 id: {matches: /^\d+|me$/},
                 uuid: {isUUID: true},
+                slug: {isSlug: true},
                 page: {matches: /^\d+$/},
                 limit: {matches: /^\d+|all$/},
+                fields: {matches: /^[\w, ]+$/},
+                order: {matches: /^[a-z0-9_,\. ]+$/i},
                 name: {}
             },
             // these values are sanitised/validated separately
-            noValidation = ['data', 'context', 'include'],
+            noValidation = ['data', 'context', 'include', 'filter'],
             errors = [];
 
         _.each(options, function (value, key) {
@@ -124,8 +127,8 @@ utils = {
                 if (globalValidations[key]) {
                     errors = errors.concat(validation.validate(value, key, globalValidations[key]));
                 } else {
-                    // all other keys should be an alphanumeric string + -, like slug, tag, author, status, etc
-                    errors = errors.concat(validation.validate(value, key, {matches: /^[a-z0-9\-]+$/}));
+                    // all other keys should be alpha-numeric with dashes/underscores, like tag, author, status, etc
+                    errors = errors.concat(validation.validate(value, key, globalValidations.slug));
                 }
             }
         });
@@ -134,13 +137,14 @@ utils = {
     },
 
     /**
-     * ## Is Public Context?
-     * If this is a public context, return true
+     * ## Detect Public Context
+     * Calls parse context to expand the options.context object
      * @param {Object} options
      * @returns {Boolean}
      */
-    isPublicContext: function isPublicContext(options) {
-        return permissions.parseContext(options.context).public;
+    detectPublicContext: function detectPublicContext(options) {
+        options.context = permissions.parseContext(options.context);
+        return options.context.public;
     },
     /**
      * ## Apply Public Permissions
@@ -171,7 +175,7 @@ utils = {
         return function doHandlePublicPermissions(options) {
             var permsPromise;
 
-            if (utils.isPublicContext(options)) {
+            if (utils.detectPublicContext(options)) {
                 permsPromise = utils.applyPublicPermissions(docName, method, options);
             } else {
                 permsPromise = permissions.canThis(options.context)[method][singular](options.data);
@@ -180,7 +184,7 @@ utils = {
             return permsPromise.then(function permissionGranted() {
                 return options;
             }).catch(function handleError(error) {
-                return errors.handleAPIError(error);
+                return errors.formatAndRejectAPIError(error);
             });
         };
     },
@@ -211,16 +215,28 @@ utils = {
                 // forward error to next catch()
                 return Promise.reject(error);
             }).catch(function handleError(error) {
-                return errors.handleAPIError(error);
+                return errors.formatAndRejectAPIError(error);
             });
         };
     },
 
-    prepareInclude: function prepareInclude(include, allowedIncludes) {
-        include = include || '';
-        include = _.intersection(include.split(','), allowedIncludes);
+    trimAndLowerCase: function trimAndLowerCase(params) {
+        params = params || '';
+        if (_.isString(params)) {
+            params = params.split(',');
+        }
 
-        return include;
+        return _.map(params, function (item) {
+            return item.trim().toLowerCase();
+        });
+    },
+
+    prepareInclude: function prepareInclude(include, allowedIncludes) {
+        return _.intersection(this.trimAndLowerCase(include), allowedIncludes);
+    },
+
+    prepareFields: function prepareFields(fields) {
+        return this.trimAndLowerCase(fields);
     },
 
     /**
@@ -237,6 +253,10 @@ utils = {
         return function doConversion(options) {
             if (options.include) {
                 options.include = utils.prepareInclude(options.include, allowedIncludes);
+            }
+            if (options.fields) {
+                options.columns = utils.prepareFields(options.fields);
+                delete options.fields;
             }
             return options;
         };

@@ -54,6 +54,7 @@ var DEBUG = false, // TOGGLE THIS TO GET MORE SCREENSHOTS
     },
     screens,
     CasperTest,
+    utils = require('utils'),
     // ## Debugging
     jsErrors = [],
     pageErrors = [],
@@ -205,6 +206,12 @@ casper.thenOpenAndWaitForPageLoad = function (screen, then, timeout) {
     timeout = timeout || casper.failOnTimeout(casper.test, 'Unable to load ' + screen);
 
     return casper.thenOpen(url + screens[screen].url).then(function () {
+        // HACK: phantomjs + flexbox = nope. Fix offending styles here.
+        casper.evaluate(function () {
+            var style = document.createElement('style');
+            style.innerHTML = '.gh-main > section { width: auto; }';
+            document.body.appendChild(style);
+        });
         return casper.waitForScreenLoad(screen, then, timeout);
     });
 };
@@ -257,6 +264,22 @@ casper.echoConcise = function (message, style) {
     }
 };
 
+// ### Wait for Selector Text
+// Does casper.waitForSelector but checks for the presence of specified text
+// http://stackoverflow.com/questions/32104784/wait-for-an-element-to-have-a-specific-text-with-casperjs
+casper.waitForSelectorText = function (selector, text, then, onTimeout, timeout) {
+    this.waitForSelector(selector, function _then() {
+        this.waitFor(function _check() {
+            var content = this.fetchText(selector);
+            if (utils.isRegExp(text)) {
+                return text.test(content);
+            }
+            return content.indexOf(text) !== -1;
+        }, then, onTimeout, timeout);
+    }, onTimeout, timeout);
+    return this;
+};
+
 // pass through all console.logs
 casper.on('remote.message', function (msg) {
     casper.echoConcise('CONSOLE LOG: ' + msg, 'INFO');
@@ -268,7 +291,7 @@ casper.on('error', function (msg, trace) {
     if (trace && trace[0]) {
         casper.echoConcise('file:     ' + trace[0].file, 'WARNING');
         casper.echoConcise('line:     ' + trace[0].line, 'WARNING');
-        casper.echoConcise('function: ' + trace[0]['function'], 'WARNING');
+        casper.echoConcise('function: ' + trace[0].function, 'WARNING');
     }
     jsErrors.push(msg);
 });
@@ -279,7 +302,7 @@ casper.on('page.error', function (msg, trace) {
     if (trace && trace[0]) {
         casper.echoConcise('file:     ' + trace[0].file, 'WARNING');
         casper.echoConcise('line:     ' + trace[0].line, 'WARNING');
-        casper.echoConcise('function: ' + trace[0]['function'], 'WARNING');
+        casper.echoConcise('function: ' + trace[0].function, 'WARNING');
     }
     pageErrors.push(msg);
 });
@@ -436,7 +459,7 @@ CasperTest.Routines = (function () {
                 casper.captureScreenshot('signing_in2.png');
             });
 
-            casper.waitForResource(/posts\/\?status=all&staticPages=all/, function then() {
+            casper.waitForResource(/posts\/\?(?=.*status=all)(?=.*staticPages=all)/, function then() {
                 casper.captureScreenshot('signing_in.png');
             }, function timeout() {
                 casper.test.fail('Unable to signin and load admin panel');

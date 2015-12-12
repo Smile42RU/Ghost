@@ -37,8 +37,21 @@
             <fieldset>
                 <div class="form-group">
                     <label>Send a test email</label>
-                    {{gh-spin-button type="button" id="sendtestemail" class="btn btn-blue" action="sendTestEmail" buttonText="Send" submitting=submitting}}
+                    {{#gh-spin-button id="sendtestemail" class="btn btn-blue" action="sendTestEmail" submitting=submitting}}Send{{/gh-spin-button}}
                     <p>Sends a test email to your address.</p>
+                </div>
+            </fieldset>
+        </form>
+        <hr>
+        <form>
+            <fieldset>
+                <div class="form-group for-checkbox">
+                    <h3>Enable Beta Features</h3>
+                    <label class="checkbox" for="labs-publicAPI">
+                        {{input id="labs-publicAPI" name="labs[publicAPI]" type="checkbox" checked=usePublicAPI}}
+                        <span class="input-toggle-component"></span>
+                        <p>Public API - For full instructions, read the <a href="http://support.ghost.org/public-api-beta/">developer guide</a>.</p>
+                    </label>
                 </div>
             </fieldset>
         </form>
